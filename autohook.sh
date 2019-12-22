@@ -8,6 +8,7 @@
 
 
 echo() {
+    # shellcheck disable=SC2145
     builtin echo "[Autohook] $@";
 }
 
@@ -40,9 +41,9 @@ install() {
     do
         hook_symlink="$hooks_dir/$hook_type"
         ln -s $autohook_linktarget "$hook_symlink"
-	mkdir -v "$hooks_dir/$hook_type"
-	mkdir -v "$hooks_dir/scripts"
-	ln -s "$hooks_dir/scripts/default.sh" "$hooks_dir/$hook_type/00_default.sh"
+	mkdir -v "$repo_root/hooks/$hook_type"
+	mkdir -v "$repo_root/hooks/scripts"
+	ln -s "../scripts/default.sh" "hooks/$hook_type/00_default.sh"
     done
 }
 
