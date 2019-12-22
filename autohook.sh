@@ -39,13 +39,16 @@ install() {
     for hook_type in "${hook_types[@]}"
     do
         hook_symlink="$hooks_dir/$hook_type"
-        ln -s $autohook_linktarget $hook_symlink
+        ln -s $autohook_linktarget "$hook_symlink"
+	mkdir -v "$hooks_dir/$hook_type"
+	mkdir -v "$hooks_dir/scripts"
+	ln -s "$hooks_dir/scripts/default.sh" "$hooks_dir/$hook_type/00_default.sh"
     done
 }
 
 
 main() {
-    calling_file=$(basename $0)
+    calling_file=$(basename "$0")
 
     if [[ $calling_file == "autohook.sh" ]]
     then
@@ -62,7 +65,7 @@ main() {
         number_of_symlinks="${#files[@]}"
         if [[ $number_of_symlinks == 1 ]]
         then
-            if [[ "$(basename ${files[0]})" == "*" ]]
+            if [[ $(basename "${files[0]}") == "*" ]]
             then
                 number_of_symlinks=0
             fi
@@ -73,9 +76,9 @@ main() {
             hook_exit_code=0
             for file in "${files[@]}"
             do
-                scriptname=$(basename $file)
+                scriptname=$(basename "$file")
                 echo "BEGIN $scriptname"
-                eval $file &> /dev/null
+                eval "$file" &> /dev/null
                 script_exit_code=$?
                 if [[ $script_exit_code != 0 ]]
                 then
