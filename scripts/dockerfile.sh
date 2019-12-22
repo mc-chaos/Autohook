@@ -8,6 +8,24 @@ function header() { tput bold; echo -e "\n${1}"; tput sgr0; }
 function fail() { tput setaf $c_fail; echo -ne "${1}"; tput sgr0; }
 function pass() { tput setaf $c_pass; echo -ne "${1}"; tput sgr0; }
 
+# test if shellcheck exists
+if command -v docker
+then
+	echo "docker exists; test if hadolint image exists"
+else
+	echo "docker do not exists; Please install !!!"
+	echo "see: https://www.docker.com/"
+	exit 255
+fi
+if command -v "docker images |grep hadolint"
+then
+	echo "Docker Image 'hadolint' exists; go for linting Dockerfile"
+else
+	echo "Docker Image 'hadolint/hadolint' dos not exists; Please install !!!"
+	echo "see: https://github.com/hadolint/hadolint/"
+	exit 255
+fi
+
 # validating the whole manifest takes too long. uncomment this
 # if you want to test the whole shebang.
 # for file in $(find . -name "*.sh")

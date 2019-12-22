@@ -8,6 +8,16 @@ function header() { tput bold; echo -e "\n${1}"; tput sgr0; }
 function fail() { tput setaf $c_fail; echo -ne "${1}"; tput sgr0; }
 function pass() { tput setaf $c_pass; echo -ne "${1}"; tput sgr0; }
 
+# test if shellcheck exists
+if command -v yamllint
+then
+	echo "yamllint exists; go for linting files"
+else
+	echo "yamllint do not exists; Please install !!!"
+	echo "see: https://yamllint.readthedocs.io/"
+	exit 255
+fi
+
 # validating the whole manifest takes too long. uncomment this
 # if you want to test the whole shebang.
 # for file in $(find . -name "*.sh")

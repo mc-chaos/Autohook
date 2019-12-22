@@ -8,6 +8,16 @@ function header() { tput bold; echo -e "\n${1}"; tput sgr0; }
 function fail() { tput setaf $c_fail; echo -ne "${1}"; tput sgr0; }
 function pass() { tput setaf $c_pass; echo -ne "${1}"; tput sgr0; }
 
+# test if shellcheck exists
+if command -v shellcheck
+then
+	echo "ShellCheck exists; go for ShellChecking files"
+else
+	echo "ShellCheck do not exists; Please install !!!"
+	echo "see: https://github.com/koalaman/shellcheck"
+	exit 255
+fi
+
 # validating the whole manifest takes too long. uncomment this
 # if you want to test the whole shebang.
 # for file in $(find . -name "*.sh")
