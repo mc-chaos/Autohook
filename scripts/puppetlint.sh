@@ -1,0 +1,243 @@
+#!/bin/bash
+# shellcheck disable=SC2143
+# pre-commit git hook to check the validity of a puppet manifest
+#
+# Prerequisites:
+#   gem install puppet-lint puppet
+#
+# Install:
+#  /path/to/repo/.git/hooks/pre-commit
+#
+# Original:
+#  blog: http://techblog.roethof.net/puppet/a-puppet-git-pre-commit-hook-is-always-easy-to-have/
+#
+# Authors:
+#  Ronny Roethof
+#  Mattias Geniar <m@ttias.be>
+#  Rob Nelson <rnelson0@gmail.com>
+#  Jake Rogers <code@supportoss.org>
+
+# set colors
+c_fail='1'  # red
+c_pass='2'  # green
+
+function header() { tput bold; echo -e "\n${1}"; tput sgr0; }
+function fail() { tput setaf $c_fail; echo -ne "${1}"; tput sgr0; }
+function pass() { tput setaf $c_pass; echo -ne "${1}"; tput sgr0; }
+
+function use_bundle() {
+  path_to_bundle=$(command -v bundle)
+  if [[ -x "$path_to_bundle" ]] && [[ -f Gemfile ]]; then
+    if "${path_to_bundle}" check >/dev/null 2>&1; then
+      return 0
+    else
+      fail "A bundler setup is present but incomplete. Run 'bundle install' or remove the Gemfile.\n"
+      exit 1
+    fi
+  else
+    return 1
+  fi
+}
+
+function use_pdk() {
+  if [[ $(/usr/bin/uname -s) = 'Linux' ]] || [[ $(/usr/bin/uname -s) = 'Darwin' ]]; then
+    path_to_pdk=$(command -v pdk)
+  elif command -v powershell.exe >/dev/null 2>&1 ; then
+    path_to_pdk='powershell.exe -command pdk'
+  fi
+  if [[ -n "$path_to_pdk" ]]; then
+    pdk_version=$(${path_to_pdk} --version)
+    return 0
+  else
+    return 1
+  fi
+}
+
+function prefer_pdk() {
+  # By default, prefer the PDK over a bundler setup
+  # If a user sets a file or envvar, prefer the bundler setup
+  prefer_pdk=0
+
+  if [[ -e ~/.prefer_bundler ]] || [[ -e ./.prefer_bundler ]] || [[ -n "${PREFER_BUNDLER}" ]]; then
+    prefer_pdk=1
+  fi
+  return $prefer_pdk
+}
+
+function setup_paths() {
+  # Make sure the necessary tools are installed. If they aren't, just die and
+  # stop the commit. Force the use of these tools before a commit is allowed.
+
+  # Prefer the PDK by default
+  if prefer_pdk && use_pdk; then
+    path_to_puppet="${path_to_pdk} bundle exec puppet"
+    path_to_puppet_lint="${path_to_pdk} bundle exec puppet-lint"
+    path_to_erb="${path_to_pdk} bundle exec erb"
+    path_to_ruby="${path_to_pdk} bundle exec ruby"
+
+  # Second preference is for a bundler setup
+  elif use_bundle; then
+    path_to_puppet="${path_to_bundle} exec puppet"
+    path_to_puppet_lint="${path_to_bundle} exec puppet-lint"
+    path_to_erb="${path_to_bundle} exec erb"
+    path_to_ruby="${path_to_bundle} exec ruby"
+
+  # If neither the PDK or bundler are available, rely on actual binaries
+  else
+    path_to_puppet=$(command -v puppet)
+    if ! [[ -x "$path_to_puppet" ]]; then
+      echo "The puppet binary wasn't found. Sorry, I won't allow you to commit without puppet installed."
+      fail "Please install puppet and try again.\n"
+      exit 1
+    fi
+
+    path_to_puppet_lint=$(command -v puppet-lint)
+    if ! [[ -x "$path_to_puppet_lint" ]]; then
+      echo "The puppet-lint binary wasn't found. Sorry, I won't allow you to commit without puppet-lint installed."
+      fail "Please install puppet-lint and try again.\n"
+      exit 1
+    fi
+
+    path_to_erb=$(command -v erb)
+    if ! [[ -x "$path_to_erb" ]]; then
+      echo "The erb binary wasn't found. Sorry, I won't allow you to commit without erb installed."
+      fail "Please install erb (Ruby Templating) and try again.\n"
+      exit 1
+    fi
+
+    path_to_ruby=$(command -v ruby)
+    if ! [[ -x "$path_to_ruby" ]]; then
+      echo "The ruby binary wasn't found. Sorry, I won't allow you to commit without ruby installed."
+      fail "Please install ruby and try again.\n"
+      exit 1
+    fi
+  fi
+}
+
+# shellcheck disable=SC2046
+function checkyaml() {
+  if [ -n "$path_to_pdk" ] && { [ $(cut -d. -f1 <<<"$pdk_version") -gt 1 ] || [ $(cut -d. -f2 <<<"$pdk_version") -ge 9 ]; }; then
+    $path_to_pdk validate yaml "$1"
+  else
+    $path_to_ruby -e "require 'yaml'; YAML.load_file('$1')"
+  fi
+}
+
+setup_paths
+
+if [[ $(git diff --name-only --cached | grep -E '\.(pp)') ]]; then
+  header "*** Checking puppet code for style ***"
+  # for file in $(git diff --name-only --cached | grep -E '\.(pp|erb)')
+  for file in $(git diff --name-only --cached | grep -E '\.(pp)'); do
+    # Only check new/modified files that end in *.pp extension
+    if [[ -f $file && $file == *.pp ]]; then
+      # allow user-defined over-ride of linting rules with .puppet-lint.rc
+      if [[ -f "$(git rev-parse --show-toplevel)/.puppet-lint.rc" ]]; then
+        $path_to_puppet_lint --config "$(git rev-parse --show-toplevel)/.puppet-lint.rc" "$file"
+      else
+        $path_to_puppet_lint --with-filename "$file"
+      fi
+
+      # Set us up to bail if we receive any syntax errors
+      # shellcheck disable=SC2181
+      if [[ $? -ne 0 ]]; then
+        fail "FAILED: "; echo "$file"
+        syntax_is_bad=1
+      else
+        pass "PASSED: "; echo "$file"
+      fi
+    fi
+  done
+
+  header "*** Checking puppet manifest syntax ***"
+  # validating the whole manifest takes too long. uncomment this
+  # if you want to test the whole shebang.
+  # for file in $(find . -name "*.pp")
+  # for file in $(git diff --name-only --cached | grep -E '\.(pp|erb)')
+  for file in $(git diff --name-only --cached | grep -E '\.(pp)'); do
+    if [[ -f $file && $file == *.pp ]]; then
+      if $path_to_puppet parser validate "$file"; then
+        fail "FAILED: "; echo "$file"
+        syntax_is_bad=1
+      else
+        pass "PASSED: "; echo "$file"
+      fi
+    fi
+  done
+fi
+
+if [[ -n $(git diff --name-only --cached | grep -E manifests/site.pp) ]]; then
+  echo "*** Checking if the catalog compiles ***"
+  if $path_to_puppet apply --noop manifests/site.pp ; then
+    fail "FAILED: "; echo "catalog compilation"
+    syntax_is_bad=1
+  else
+    pass "PASSED: "; echo "catalog compilation"
+  fi
+fi
+
+if [[ $(git diff --name-only --cached | grep -E '\.(epp)') ]]; then
+  header "*** Checking puppet template(epp) syntax ***"
+  for file in $(git diff --name-only --cached | grep -E '\.(epp)'); do
+    if [[ -f $file && $file == *.epp ]]; then
+      if $path_to_puppet epp validate "$file" ; then
+        fail "FAILED: "; echo "$file"
+        syntax_is_bad=1
+      else
+        pass "PASSED: "; echo "$file"
+      fi
+    fi
+  done
+fi
+
+if [[ $(git diff --name-only --cached | grep -E '\.(erb$)') ]]; then
+  header "*** Checking ruby template(erb) syntax ***"
+  for file in $(git diff --name-only --cached | grep -E '\.(erb$)'); do
+    if [[ -f $file ]]; then
+      $path_to_erb -P -x -T '-' "$file" | $path_to_ruby -c | grep -v '^Syntax OK'
+      if [[ "${PIPESTATUS[1]}" -ne 0 ]]; then
+        fail "FAILED: "; echo "$file"
+        syntax_is_bad=1
+      else
+        pass "PASSED: "; echo "$file"
+      fi
+    fi
+  done
+fi
+
+if [[ $(git diff --name-only --cached | grep -E '\.(rb$)') ]]; then
+  header "*** Checking ruby syntax ***"
+  for file in $(git diff --name-only --cached | grep -E '\.(rb$)'); do
+    if [[ -f $file ]]; then
+      $path_to_ruby -c "$file" | grep -v '^Syntax OK'
+      if [[ "${PIPESTATUS[0]}" -ne 0 ]]; then
+        fail "FAILED: "; echo "$file"
+        syntax_is_bad=1
+      else
+        pass "PASSED: "; echo "$file"
+      fi
+    fi
+  done
+fi
+
+if [[ $(git diff --name-only --cached | grep -E '\.(yaml$|yml$)') ]]; then
+  header "*** Checking YAML syntax ***"
+  for file in $(git diff --name-only --cached | grep -E '\.(yaml$|yml$)'); do
+    if [[ -f $file ]]; then
+      if checkyaml "$file" ; then
+        fail "FAILED: "; echo "$file"
+        syntax_is_bad=1
+      else
+        pass "PASSED: "; echo "$file"
+      fi
+    fi
+  done
+fi
+
+if [[ $syntax_is_bad -eq 1 ]]; then
+  fail "\nErrors Found, Commit REJECTED\n"
+  exit 1
+else
+  pass "\nNo Errors Found, Commit ACCEPTED\n"
+fi
+
