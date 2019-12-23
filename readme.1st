@@ -1,0 +1,4 @@
+HowTo create Symlink:
+
+from gitrepo_root:
+n -s  ../scripts/default.sh hooks/pre-commit/00_default.sh
