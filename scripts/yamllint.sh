@@ -1,4 +1,5 @@
 #! /bin/bash
+echo "YAMLLINT checks"
 
 # set colors
 c_fail='1'  # red
